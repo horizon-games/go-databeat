@@ -23,9 +23,10 @@ type Databeat struct {
 	authKey string
 	authCtx context.Context
 
-	queue    []*proto.Event
-	queueRaw []*proto.Event
-	flushSem chan struct{}
+	assertTypes map[string]struct{}
+	queue       []*proto.Event
+	queueRaw    []*proto.RawEvent
+	flushSem    chan struct{}
 
 	stats Stats
 
@@ -36,6 +37,7 @@ type Databeat struct {
 }
 
 type Options struct {
+	AssertEventTypes []string
 	FlushBatchSize   int
 	FlushInterval    time.Duration
 	FlushTimeout     time.Duration
@@ -46,6 +48,7 @@ type Options struct {
 }
 
 var DefaultOptions = Options{
+	AssertEventTypes: []string{},
 	FlushBatchSize:   100,
 	FlushInterval:    2000 * time.Millisecond,
 	FlushTimeout:     30 * time.Second,
@@ -60,8 +63,9 @@ type Stats struct {
 }
 
 type (
-	Event  = proto.Event
-	Device = proto.Device
+	Event    = proto.Event
+	Device   = proto.Device
+	RawEvent = proto.RawEvent
 )
 
 func NewDatabeatClient(host, authKey string, logger zerolog.Logger, opts ...Options) (*Databeat, error) {
@@ -86,6 +90,11 @@ func NewDatabeatClient(host, authKey string, logger zerolog.Logger, opts ...Opti
 		options.FlushConcurrency = 1
 	}
 
+	assertTypes := map[string]struct{}{}
+	for _, et := range options.AssertEventTypes {
+		assertTypes[et] = struct{}{}
+	}
+
 	client := proto.NewDatabeatClient(host, options.HTTPClient)
 
 	headers := http.Header{}
@@ -96,15 +105,16 @@ func NewDatabeatClient(host, authKey string, logger zerolog.Logger, opts ...Opti
 	}
 
 	dbeat := &Databeat{
-		options:  options,
-		log:      logger.With().Str("ps", "databeat").Logger(),
-		Client:   client,
-		Enabled:  true,
-		authKey:  authKey,
-		authCtx:  authCtx,
-		queue:    make([]*proto.Event, 0, options.MaxQueueSize),
-		queueRaw: make([]*proto.Event, 0, options.MaxQueueSize),
-		flushSem: make(chan struct{}, options.FlushConcurrency),
+		options:     options,
+		log:         logger.With().Str("ps", "databeat").Logger(),
+		Client:      client,
+		Enabled:     true,
+		authKey:     authKey,
+		authCtx:     authCtx,
+		assertTypes: assertTypes,
+		queue:       make([]*proto.Event, 0, options.MaxQueueSize),
+		queueRaw:    make([]*proto.RawEvent, 0, options.MaxQueueSize),
+		flushSem:    make(chan struct{}, options.FlushConcurrency),
 	}
 
 	return dbeat, nil
@@ -147,6 +157,18 @@ func (t *Databeat) Track(events ...*Event) {
 		return
 	}
 
+	// Validate event types at runtime if EventTypes has been provided in options
+	if len(t.assertTypes) > 0 {
+		var valid bool
+		var invalidNames []string
+		valid, invalidNames, events = validateEventTypes(t.assertTypes, events)
+		if !valid {
+			t.log.Warn().Strs("invalidEvents", invalidNames).Msgf("databeat: %d invalid event types", len(invalidNames))
+			// TODO: add alerter here
+		}
+	}
+
+	// Add events to the queue
 	t.mu.Lock()
 	t.queue = append(t.queue, events...)
 	n := len(t.queue)
@@ -157,7 +179,7 @@ func (t *Databeat) Track(events ...*Event) {
 	}
 }
 
-func (t *Databeat) TrackRaw(events ...*Event) {
+func (t *Databeat) TrackRaw(events ...*RawEvent) {
 	if !t.Enabled {
 		return
 	}
@@ -194,10 +216,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 	}
 
 	// copy queueRaw
-	var rawBatch []*proto.Event
+	var rawBatch []*proto.RawEvent
 	var flushedRaw uint32
 	if len(t.queueRaw) > 0 {
-		rawBatch = make([]*proto.Event, len(t.queueRaw))
+		rawBatch = make([]*proto.RawEvent, len(t.queueRaw))
 		copy(rawBatch, t.queueRaw)
 		t.queueRaw = t.queueRaw[:0]
 	}
@@ -219,7 +241,8 @@ func (t *Databeat) Flush(ctx context.Context) error {
 		for i := 0; i < len(trackBatch); i += t.options.FlushBatchSize {
 			wg.Add(1)
 			events := trackBatch[i:calc.Min(i+t.options.FlushBatchSize, len(trackBatch))]
-			updateEventDevice(events, ServerDevice())
+			updateEventClientProp(events)
+			updateEventDeviceType(events, ServerDevice())
 
 			t.flushSem <- struct{}{}
 			go func(events []*proto.Event) {
@@ -253,10 +276,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 		for i := 0; i < len(rawBatch); i += t.options.FlushBatchSize {
 			wg.Add(1)
 			events := rawBatch[i:calc.Min(i+t.options.FlushBatchSize, len(rawBatch))]
-			updateEventDevice(events, ServerDevice())
+			updateRawEventDeviceType(events, ServerDevice())
 
 			t.flushSem <- struct{}{}
-			go func(events []*proto.Event) {
+			go func(events []*proto.RawEvent) {
 				defer func() { <-t.flushSem }()
 				defer wg.Done()
 

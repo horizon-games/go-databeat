@@ -10,14 +10,24 @@ import (
 	"time"
 )
 
+const databeatPathPrefix = "/rpc/Databeat/"
+
 // ProxyHandler routes requests from /rpc/Databeat/* to the remote Databeat server.
 func ProxyHandler(databeatHost string) func(next http.Handler) http.Handler {
 	origin, err := url.Parse(databeatHost)
 
 	// In case of an error with the host, we return a handler that does nothing.
-	if err != nil {
+	if databeatHost == "" || err != nil {
 		return func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// respond to the frontend even if we can't proxy the request
+				if strings.HasPrefix(r.URL.Path, databeatPathPrefix) {
+					w.Header().Set("Content-Type", "application/json")
+					w.Write([]byte(`{"ok":false}`))
+					return
+				}
+
+				// continue to next handler
 				next.ServeHTTP(w, r)
 			})
 		}
@@ -47,7 +57,7 @@ func ProxyHandler(databeatHost string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Path does not match /rpc/Databeat/*, so we skip the proxy.
-			if !strings.HasPrefix(r.URL.Path, "/rpc/Databeat/") {
+			if !strings.HasPrefix(r.URL.Path, databeatPathPrefix) {
 				next.ServeHTTP(w, r)
 				return
 			}
