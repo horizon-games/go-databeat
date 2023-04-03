@@ -53,5 +53,5 @@ var DefaultSessionOptions = SessionOptions{
 }
 
 func sha256Hex(in string) string {
-	return fmt.Sprintf("%s", sha256.Sum256([]byte(in)))
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(in)))
 }
