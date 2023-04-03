@@ -1,6 +1,7 @@
 package databeat
 
 import (
+	"net/http"
 	"strings"
 	"time"
 
@@ -40,6 +41,14 @@ func DeviceFromUserAgent(userAgent string) *proto.Device {
 	}
 
 	return device
+}
+
+func CountryCodeFromRequest(r *http.Request) string {
+	h := r.Header.Get("CF-IPCountry")
+	if h == "" {
+		return ""
+	}
+	return strings.ToUpper(h)
 }
 
 func ServerDevice() *Device {
