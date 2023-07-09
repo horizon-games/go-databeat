@@ -44,17 +44,19 @@ type Options struct {
 	FlushConcurrency int
 	MaxQueueSize     int
 	// UserAgent        string
-	HTTPClient *http.Client
+	SetServerClientProp bool
+	HTTPClient          *http.Client
 }
 
 var DefaultOptions = Options{
-	AssertEventTypes: []string{},
-	FlushBatchSize:   100,
-	FlushInterval:    2000 * time.Millisecond,
-	FlushTimeout:     30 * time.Second,
-	FlushConcurrency: 10,
-	MaxQueueSize:     10_000,
-	HTTPClient:       &http.Client{},
+	AssertEventTypes:    []string{},
+	FlushBatchSize:      100,
+	FlushInterval:       2000 * time.Millisecond,
+	FlushTimeout:        30 * time.Second,
+	FlushConcurrency:    10,
+	MaxQueueSize:        10_000,
+	SetServerClientProp: false,
+	HTTPClient:          &http.Client{},
 }
 
 type Stats struct {
@@ -242,7 +244,9 @@ func (t *Databeat) Flush(ctx context.Context) error {
 			wg.Add(1)
 
 			events := trackBatch[i:calc.Min(i+t.options.FlushBatchSize, len(trackBatch))]
-			updateEventClientProp(events)
+			if t.options.SetServerClientProp {
+				updateEventClientProp(events)
+			}
 			updateEventDeviceType(events, ServerDevice())
 
 			t.flushSem <- struct{}{}
