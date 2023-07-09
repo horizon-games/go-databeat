@@ -240,6 +240,7 @@ func (t *Databeat) Flush(ctx context.Context) error {
 
 		for i := 0; i < len(trackBatch); i += t.options.FlushBatchSize {
 			wg.Add(1)
+
 			events := trackBatch[i:calc.Min(i+t.options.FlushBatchSize, len(trackBatch))]
 			updateEventClientProp(events)
 			updateEventDeviceType(events, ServerDevice())

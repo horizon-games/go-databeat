@@ -59,12 +59,12 @@ func main() {
 	})
 
 	// NOTE: you can also call TrackRaw but you must have a JWT token with authorization
-	// dbeat.TrackRaw(&databeat.Event{
+	// dbeat.TrackRaw(&databeat.RawEvent{
 	// 	Event:  "example.ping",
 	// 	Source: "api-server/some-endpoint",
 	// 	Props:  map[string]string{"raw": "test"},
 	// 	TS:     databeat.TimeNow(),
-	// 	User:   databeat.String("user1"),
+	// 	UserID: databeat.String("user1"),
 	// })
 
 	// Wait to finish
