@@ -74,9 +74,9 @@ func updateRawEventDeviceType(events []*RawEvent, device *Device) {
 func updateEventClientProp(events []*Event) {
 	for _, ev := range events {
 		if ev.Props == nil {
-			ev.Props = map[string]string{"client": "server"}
+			ev.Props = map[string]string{"_dbeatClient_": "server"}
 		} else {
-			ev.Props["client"] = "server"
+			ev.Props["_dbeatClient_"] = "server"
 		}
 	}
 }
