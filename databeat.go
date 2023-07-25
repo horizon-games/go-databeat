@@ -37,18 +37,19 @@ type Databeat struct {
 }
 
 type Options struct {
-	AssertEventTypes []string
-	FlushBatchSize   int
-	FlushInterval    time.Duration
-	FlushTimeout     time.Duration
-	FlushConcurrency int
-	MaxQueueSize     int
-	// UserAgent        string
+	Privacy             PrivacyOptions
+	AssertEventTypes    []string
+	FlushBatchSize      int
+	FlushInterval       time.Duration
+	FlushTimeout        time.Duration
+	FlushConcurrency    int
+	MaxQueueSize        int
 	SetServerClientProp bool
 	HTTPClient          *http.Client
 }
 
 var DefaultOptions = Options{
+	Privacy:             DefaultPrivacyOptions,
 	AssertEventTypes:    []string{},
 	FlushBatchSize:      100,
 	FlushInterval:       2000 * time.Millisecond,
@@ -133,7 +134,6 @@ func (t *Databeat) Run(ctx context.Context) error {
 	defer atomic.StoreInt32(&t.running, 0)
 
 	return t.run()
-
 }
 
 func (t *Databeat) Stop() {
@@ -147,6 +147,79 @@ func (t *Databeat) IsRunning() bool {
 
 func (t *Databeat) Stats() Stats {
 	return t.stats
+}
+
+func (t *Databeat) TrackUserEvent(userID string, userEvents ...*Event) {
+	if !t.Enabled {
+		return
+	}
+
+	// Copy events
+	events := make([]*Event, len(userEvents))
+	for i, ev := range userEvents {
+		v := *ev // copy
+		events[i] = &v
+	}
+
+	// Set event based on user info
+	uid, ident := GenUserID(userID, t.options.Privacy)
+
+	for _, ev := range events {
+		// User & ident
+		ev.UserID = &uid
+		ev.Ident = uint8(ident)
+	}
+
+	// Track
+	t.Track(events...)
+}
+
+func (t *Databeat) TrackUserEventFromRequest(r *http.Request, userID string, userEvents ...*Event) {
+	if !t.Enabled {
+		return
+	}
+
+	// HTTP request is required for user event tracking
+	if r == nil {
+		t.log.Warn().Msgf("TrackUserEventFromRequest, skipping event for userID as http request is nil: %s", userID)
+		return
+	}
+
+	// Copy events
+	events := make([]*Event, len(userEvents))
+	for i, ev := range userEvents {
+		v := *ev // copy
+		events[i] = &v
+	}
+
+	// Set event based on http request and user info
+	uid, ident := GenUserIDFromRequest(r, userID, t.options.Privacy)
+
+	for _, ev := range events {
+		// User & ident
+		ev.UserID = &uid
+		ev.Ident = uint8(ident)
+
+		// Source
+		if ev.Source == "" {
+			ev.Source = r.URL.Path
+		}
+
+		// Device from User-Agent
+		userAgent := r.Header.Get("User-Agent")
+		if userAgent != "" {
+			ev.Device = DeviceFromUserAgent(userAgent)
+		}
+
+		// Country
+		countryCode := CountryCodeFromRequest(r)
+		if countryCode != "" {
+			ev.CountryCode = &countryCode
+		}
+	}
+
+	// Track!
+	t.Track(events...)
 }
 
 func (t *Databeat) Track(events ...*Event) {
