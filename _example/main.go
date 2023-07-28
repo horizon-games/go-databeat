@@ -17,7 +17,7 @@ func main() {
 
 	databeatHost := "http://localhost:9999"
 	logger := zerolog.New(os.Stdout)
-	authToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiI0MDE5NjM5NzUifQ.pEOH2aaIv3ZaEv0TAoHGEilMPI3qpPM3j0X4v0mcLWs"
+	authToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJkZW1vIn0.rkbj-101BpUkQPMtmKdp2uANFBsiPmd8JMV3jPwj7X0"
 
 	dbeat, err := databeat.NewDatabeatClient(databeatHost, authToken, logger)
 
@@ -35,14 +35,22 @@ func main() {
 	// Wait to start
 	time.Sleep(500 * time.Millisecond)
 
-	dbeat.Track(&databeat.Event{
-		Event:  "example.ping",
-		Source: "api-server/some-endpoint",
-	},
+	dbeat.Track(
+		&databeat.Event{
+			Event:  "example.ping",
+			Source: "api-server/some-endpoint",
+		},
 		&databeat.Event{
 			Event:  "example.test",
 			Source: "api-server/some-endpoint",
-		})
+		},
+	)
+
+	dbeat.TrackUserEvent("user1", &databeat.Event{
+		Event:  "example.test",
+		Source: "api-server/some-endpoint",
+	})
+
 	dbeat.Track(&databeat.Event{
 		Event:  "example.ping",
 		Source: "api-server/some-endpoint",
@@ -59,12 +67,12 @@ func main() {
 	})
 
 	// NOTE: you can also call TrackRaw but you must have a JWT token with authorization
-	// dbeat.TrackRaw(&databeat.Event{
+	// dbeat.TrackRaw(&databeat.RawEvent{
 	// 	Event:  "example.ping",
 	// 	Source: "api-server/some-endpoint",
 	// 	Props:  map[string]string{"raw": "test"},
 	// 	TS:     databeat.TimeNow(),
-	// 	User:   databeat.String("user1"),
+	// 	UserID: databeat.String("user1"),
 	// })
 
 	// Wait to finish
