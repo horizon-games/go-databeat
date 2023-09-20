@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	mrand "math/rand"
 	"net/http"
 )
 
@@ -16,48 +17,40 @@ const (
 	IDENT_USER
 )
 
-func UserID(userID string, r ...*http.Request) (string, Ident) {
+func UserID(userID string, privacyOptions PrivacyOptions, r ...*http.Request) (string, Ident) {
 	if len(r) > 0 {
-		return GenUserIDFromRequest(r[0], userID)
+		return GenUserIDFromRequest(r[0], userID, privacyOptions)
 	} else {
-		return GenUserID(userID)
+		return GenUserID(userID, privacyOptions)
 	}
 }
 
-func GenUserID(userID string, privacyOptions ...PrivacyOptions) (string, Ident) {
-	opts := DefaultPrivacyOptions
-	if len(privacyOptions) > 0 {
-		opts = privacyOptions[0]
-	}
+func GenUserID(userID string, privacyOptions PrivacyOptions) (string, Ident) {
 	if userID == "" {
-		return "0", IDENT_ANON
+		return fmt.Sprintf("%d", mrand.Int63n(100000000000000)), IDENT_ANON
 	}
-	if !opts.UserIDHash {
+	if !privacyOptions.UserIDHash {
 		return userID, IDENT_USER
 	}
 
 	return sha256Hex(userID)[0:50], IDENT_PRIVATE
 }
 
-func GenUserIDFromRequest(r *http.Request, userID string, privacyOptions ...PrivacyOptions) (string, Ident) {
-	opts := DefaultPrivacyOptions
-	if len(privacyOptions) > 0 {
-		opts = privacyOptions[0]
-	}
+func GenUserIDFromRequest(r *http.Request, userID string, privacyOptions PrivacyOptions) (string, Ident) {
 	if userID == "" {
 		// TODO: if we wanted, we could do IP + UA hash here and use IDENT_PRIVATE
-		return "0", IDENT_ANON
+		return fmt.Sprintf("%d", mrand.Int63n(100000000000000)), IDENT_ANON
 	}
-	if !opts.UserIDHash {
+	if !privacyOptions.UserIDHash {
 		return userID, IDENT_USER
 	}
 
-	if opts.UserAgentSalt {
+	if privacyOptions.UserAgentSalt && r.Header.Get("User-Agent") != "" {
 		userAgent := r.Header.Get("User-Agent")
 		userID = fmt.Sprintf("%s:%s", userID, userAgent)
 	}
 
-	return GenUserID(userID, privacyOptions...)
+	return GenUserID(userID, privacyOptions)
 }
 
 func GenSessionID() string {

@@ -138,7 +138,10 @@ func (t *Databeat) Run(ctx context.Context) error {
 
 func (t *Databeat) Stop() {
 	t.log.Info().Msgf("databeat: stop")
-	t.ctxStop()
+	if t.ctxStop != nil {
+		t.ctxStop()
+		t.ctxStop = nil
+	}
 }
 
 func (t *Databeat) IsRunning() bool {
@@ -147,6 +150,10 @@ func (t *Databeat) IsRunning() bool {
 
 func (t *Databeat) Stats() Stats {
 	return t.stats
+}
+
+func (t *Databeat) Options() Options {
+	return t.options
 }
 
 func (t *Databeat) TrackUserEvent(userID string, userEvents ...*Event) {
@@ -166,8 +173,10 @@ func (t *Databeat) TrackUserEvent(userID string, userEvents ...*Event) {
 
 	for _, ev := range events {
 		// User & ident
-		ev.UserID = &uid
-		ev.Ident = uint8(ident)
+		if ev.UserID == nil || *ev.UserID == "" {
+			ev.UserID = &uid
+			ev.Ident = uint8(ident)
+		}
 	}
 
 	// Track
@@ -197,8 +206,10 @@ func (t *Databeat) TrackUserEventFromRequest(r *http.Request, userID string, use
 
 	for _, ev := range events {
 		// User & ident
-		ev.UserID = &uid
-		ev.Ident = uint8(ident)
+		if ev.UserID == nil || *ev.UserID == "" {
+			ev.UserID = &uid
+			ev.Ident = uint8(ident)
+		}
 
 		// Source
 		if ev.Source == "" {
