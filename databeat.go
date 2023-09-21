@@ -156,41 +156,8 @@ func (t *Databeat) Options() Options {
 	return t.options
 }
 
-func (t *Databeat) TrackUserEvent(userID string, userEvents ...*Event) {
+func (t *Databeat) TrackUserEvent(r *http.Request, userID string, userEvents ...*Event) {
 	if !t.Enabled {
-		return
-	}
-
-	// Copy events
-	events := make([]*Event, len(userEvents))
-	for i, ev := range userEvents {
-		v := *ev // copy
-		events[i] = &v
-	}
-
-	// Set event based on user info
-	uid, ident := GenUserID(userID, t.options.Privacy)
-
-	for _, ev := range events {
-		// User & ident
-		if ev.UserID == nil || *ev.UserID == "" {
-			ev.UserID = &uid
-			ev.Ident = uint8(ident)
-		}
-	}
-
-	// Track
-	t.Track(events...)
-}
-
-func (t *Databeat) TrackUserEventFromRequest(r *http.Request, userID string, userEvents ...*Event) {
-	if !t.Enabled {
-		return
-	}
-
-	// HTTP request is required for user event tracking
-	if r == nil {
-		t.log.Warn().Msgf("TrackUserEventFromRequest, skipping event for userID as http request is nil: %s", userID)
 		return
 	}
 
@@ -211,22 +178,30 @@ func (t *Databeat) TrackUserEventFromRequest(r *http.Request, userID string, use
 			ev.Ident = uint8(ident)
 		}
 
-		// Source
-		if ev.Source == "" {
-			ev.Source = r.URL.Path
+		// Decorate event if user request is passed
+		if r != nil {
+			// Source
+			if ev.Source == "" {
+				ev.Source = r.URL.Path
+			}
+
+			// Device from User-Agent
+			userAgent := r.Header.Get("User-Agent")
+			if userAgent != "" {
+				ev.Device = DeviceFromUserAgent(userAgent)
+			}
+
+			// Country
+			countryCode := CountryCodeFromRequest(r)
+			if countryCode != "" {
+				ev.CountryCode = &countryCode
+			}
 		}
 
-		// Device from User-Agent
-		userAgent := r.Header.Get("User-Agent")
-		if userAgent != "" {
-			ev.Device = DeviceFromUserAgent(userAgent)
+		if ev.Props == nil {
+			ev.Props = map[string]string{}
 		}
-
-		// Country
-		countryCode := CountryCodeFromRequest(r)
-		if countryCode != "" {
-			ev.CountryCode = &countryCode
-		}
+		ev.Props["_tracker"] = "go-databeat"
 	}
 
 	// Track!

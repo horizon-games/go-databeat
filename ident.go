@@ -45,7 +45,7 @@ func GenUserIDFromRequest(r *http.Request, userID string, privacyOptions Privacy
 		return userID, IDENT_USER
 	}
 
-	if privacyOptions.UserAgentSalt && r.Header.Get("User-Agent") != "" {
+	if r != nil && privacyOptions.UserAgentSalt && r.Header.Get("User-Agent") != "" {
 		userAgent := r.Header.Get("User-Agent")
 		userID = fmt.Sprintf("%s:%s", userID, userAgent)
 	}
