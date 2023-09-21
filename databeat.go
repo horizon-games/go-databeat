@@ -156,6 +156,9 @@ func (t *Databeat) Options() Options {
 	return t.options
 }
 
+// TrackUserEvent will track the event associated to a particular user. We use the http request
+// `r` for User-Agent and IP information. Note that `r` is optional, and you can pass `nil`
+// as the argument, but it will be unable to offer device and country information.
 func (t *Databeat) TrackUserEvent(r *http.Request, userID string, userEvents ...*Event) {
 	if !t.Enabled {
 		return
@@ -208,6 +211,8 @@ func (t *Databeat) TrackUserEvent(r *http.Request, userID string, userEvents ...
 	t.Track(events...)
 }
 
+// Track is a low-level track function where you control the full payload.
+// The method TrackUserEvent calls Track as well.
 func (t *Databeat) Track(events ...*Event) {
 	if !t.Enabled {
 		return
