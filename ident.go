@@ -32,6 +32,9 @@ func GenUserID(userID string, privacyOptions PrivacyOptions) (string, Ident) {
 	if !privacyOptions.UserIDHash {
 		return userID, IDENT_USER
 	}
+	if privacyOptions.ExtraSalt != "" {
+		userID = fmt.Sprintf("%s:%s", userID, privacyOptions.ExtraSalt)
+	}
 
 	return sha256Hex(userID)[0:50], IDENT_PRIVATE
 }
@@ -49,6 +52,9 @@ func GenUserIDFromRequest(r *http.Request, userID string, privacyOptions Privacy
 		userAgent := r.Header.Get("User-Agent")
 		userID = fmt.Sprintf("%s:%s", userID, userAgent)
 	}
+	if privacyOptions.ExtraSalt != "" {
+		userID = fmt.Sprintf("%s:%s", userID, privacyOptions.ExtraSalt)
+	}
 
 	return GenUserID(userID, privacyOptions)
 }
@@ -64,10 +70,11 @@ func GenSessionID() string {
 type PrivacyOptions struct {
 	UserIDHash    bool
 	UserAgentSalt bool
+	ExtraSalt     string
 }
 
 var DefaultPrivacyOptions = PrivacyOptions{
-	UserIDHash: true, UserAgentSalt: true,
+	UserIDHash: true, UserAgentSalt: false, ExtraSalt: "_dbeat",
 }
 
 func sha256Hex(in string) string {
