@@ -74,7 +74,7 @@ type PrivacyOptions struct {
 }
 
 var DefaultPrivacyOptions = PrivacyOptions{
-	UserIDHash: true, UserAgentSalt: false, ExtraSalt: "_dbeat",
+	UserIDHash: true, UserAgentSalt: false, ExtraSalt: "",
 }
 
 func sha256Hex(in string) string {
