@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/goware/calc"
+	"github.com/goware/logger"
 	"github.com/horizon-games/go-databeat/proto"
-	"github.com/rs/zerolog"
 )
 
 type Databeat struct {
 	options Options
-	log     zerolog.Logger
+	log     logger.Logger
 
 	Client  proto.Databeat
 	Enabled bool
@@ -71,7 +71,7 @@ type (
 	RawEvent = proto.RawEvent
 )
 
-func NewDatabeatClient(host, authKey string, logger zerolog.Logger, opts ...Options) (*Databeat, error) {
+func NewDatabeatClient(host, authKey string, logger logger.Logger, opts ...Options) (*Databeat, error) {
 	options := DefaultOptions
 	if len(opts) > 0 {
 		options = opts[0]
@@ -107,9 +107,11 @@ func NewDatabeatClient(host, authKey string, logger zerolog.Logger, opts ...Opti
 		return nil, err
 	}
 
+	// TODO: in future switch from goware/logger to just stdlib log/slog
+
 	dbeat := &Databeat{
 		options:     options,
-		log:         logger.With().Str("ps", "databeat").Logger(),
+		log:         logger.With("ps", "databeat"),
 		Client:      client,
 		Enabled:     true,
 		authKey:     authKey,
@@ -137,7 +139,7 @@ func (t *Databeat) Run(ctx context.Context) error {
 }
 
 func (t *Databeat) Stop() {
-	t.log.Info().Msgf("databeat: stop")
+	t.log.Info("databeat: stop")
 	if t.ctxStop != nil {
 		t.ctxStop()
 		t.ctxStop = nil
@@ -219,7 +221,7 @@ func (t *Databeat) Track(events ...*Event) {
 	}
 
 	if !t.IsRunning() {
-		t.log.Warn().Msgf("databeat worker is not running, skipping event.")
+		t.log.Warn("databeat worker is not running, skipping event.")
 		return
 	}
 
@@ -229,7 +231,7 @@ func (t *Databeat) Track(events ...*Event) {
 		var invalidNames []string
 		valid, invalidNames, events = validateEventTypes(t.assertTypes, events)
 		if !valid {
-			t.log.Warn().Strs("invalidEvents", invalidNames).Msgf("databeat: %d invalid event types", len(invalidNames))
+			t.log.With("invalidEvents", invalidNames).Warnf("databeat: %d invalid event types", len(invalidNames))
 			// TODO: add alerter here
 		}
 	}
@@ -251,7 +253,7 @@ func (t *Databeat) TrackRaw(events ...*RawEvent) {
 	}
 
 	if !t.IsRunning() {
-		t.log.Warn().Msgf("databeat worker is not running, skipping event.")
+		t.log.Warn("databeat worker is not running, skipping event.")
 		return
 	}
 
@@ -324,10 +326,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				ok, err := t.Client.Tick(ctx, events)
 				if err != nil {
 					// TODO: add retry logic as right now the events will just get dropped
-					t.log.Err(err).Msgf("databeat failed to %d flush Tick events -- error", len(events))
+					t.log.With("err", err).Errorf("databeat failed to %d flush Tick events -- error", len(events))
 				}
 				if err == nil && !ok {
-					t.log.Warn().Msgf("databeat failed to %d flush Tick events -- not ok", len(events))
+					t.log.Warnf("databeat failed to %d flush Tick events -- not ok", len(events))
 				}
 				if ok {
 					atomic.AddUint32(&flushedBatch, uint32(len(events)))
@@ -358,10 +360,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				ok, err := t.Client.RawEvents(ctx, events)
 				if err != nil {
 					// TODO: add retry logic as right now the events will just get dropped
-					t.log.Err(err).Msgf("databeat failed to %d flush RawEvents events -- error", len(events))
+					t.log.With("err", err).Errorf("databeat failed to %d flush RawEvents events -- error", len(events))
 				}
 				if err == nil && !ok {
-					t.log.Warn().Msgf("databeat failed to %d flush RawEvents events -- not ok", len(events))
+					t.log.Warnf("databeat failed to %d flush RawEvents events -- not ok", len(events))
 				}
 				if ok {
 					atomic.AddUint32(&flushedRaw, uint32(len(events)))
@@ -372,7 +374,7 @@ func (t *Databeat) Flush(ctx context.Context) error {
 		wg.Wait()
 	}
 
-	t.log.Debug().Msgf("databeat flushed %d events", flushedBatch+flushedRaw)
+	t.log.Debugf("databeat flushed %d events", flushedBatch+flushedRaw)
 
 	return nil
 }
@@ -395,7 +397,7 @@ func (t *Databeat) run() error {
 		case <-time.After(t.options.FlushInterval):
 			err := t.Flush(t.ctx)
 			if err != nil {
-				t.log.Err(err).Msgf("databeat: failed to flush")
+				t.log.With("err", err).Error("databeat: failed to flush")
 			}
 
 		}
