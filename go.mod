@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/goware/calc v0.2.0
-	github.com/goware/logger v0.2.0
+	github.com/goware/logger v0.3.0
 	github.com/mileusna/useragent v1.3.4
 )
 

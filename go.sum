@@ -1,7 +1,7 @@
 github.com/goware/calc v0.2.0 h1:3B9qjXYpE0kgS4LhyklbM6X/0cOvZLdUZG7sdAuVCb4=
 github.com/goware/calc v0.2.0/go.mod h1:BSQUbfS6ICW9RvSV9SikDY+t6/HQKI+CUxIpjE3VD28=
-github.com/goware/logger v0.2.0 h1:P04D31r9XbhZSkg2whwsL2uUSmCZit8rk9k2pZ6ghdA=
-github.com/goware/logger v0.2.0/go.mod h1:IC34c5H56R1I4/R/d51aQhzHsjSJqkQyIHyuJxOiu0w=
+github.com/goware/logger v0.3.0 h1:pdgnsqj2rSDXtfdu+UuAFuBuOapxeDYNETY39227LMM=
+github.com/goware/logger v0.3.0/go.mod h1:IC34c5H56R1I4/R/d51aQhzHsjSJqkQyIHyuJxOiu0w=
 github.com/mileusna/useragent v1.3.4 h1:MiuRRuvGjEie1+yZHO88UBYg8YBC/ddF6T7F56i3PCk=
 github.com/mileusna/useragent v1.3.4/go.mod h1:3d8TOmwL/5I8pJjyVDteHtgDGcefrFUX4ccGOMKNYYc=
 golang.org/x/exp v0.0.0-20230626212559-97b1e661b5df h1:UA2aFVmmsIlefxMk29Dp2juaUSth8Pyn3Tq5Y5mJGME=
