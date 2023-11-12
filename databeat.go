@@ -173,7 +173,7 @@ func (t *Databeat) TrackEvent(from From, trackEvents ...Event) {
 	// Set event based on http request and user info
 	var uid string
 	var ident Ident
-	if from.UserHTTPRequest != nil && from.UserID != "" {
+	if from.UserHTTPRequest != nil || from.UserID != "" {
 		uid, ident = GenUserIDFromRequest(from.UserHTTPRequest, from.UserID, t.options.Privacy)
 	}
 
@@ -224,8 +224,8 @@ func (t *Databeat) TrackEvent(from From, trackEvents ...Event) {
 // as the argument, but it will be unable to offer device and country information.
 func (t *Databeat) TrackUserEvent(r *http.Request, userID string, userEvents ...Event) {
 	t.TrackEvent(From{
-		UserHTTPRequest: r,
 		UserID:          userID,
+		UserHTTPRequest: r,
 	}, userEvents...)
 }
 
