@@ -10,9 +10,9 @@ import (
 )
 
 type From struct {
-	ProjectID       uint64
 	UserID          string
 	UserHTTPRequest *http.Request
+	ProjectID       uint64
 }
 
 func TimeNow() *time.Time {
