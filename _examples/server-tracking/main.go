@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/goware/logadapter-zerolog"
 	databeat "github.com/horizon-games/go-databeat"
 	"github.com/rs/zerolog"
 )
@@ -20,13 +21,14 @@ func main() {
 
 	databeatHost := "http://localhost:9999"
 	logger := zerolog.New(os.Stdout)
+	wlogger := logadapter.LogAdapter(logger)
 	authToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJkZW1vIn0.rkbj-101BpUkQPMtmKdp2uANFBsiPmd8JMV3jPwj7X0"
 
 	dbeatOptions := databeat.DefaultOptions
 	// dbeatOptions.Privacy.UserIDHash = true
 	// dbeatOptions.Privacy.UserAgentSalt = false
 
-	dbeat, err := databeat.NewDatabeatClient(databeatHost, authToken, logger, dbeatOptions)
+	dbeat, err := databeat.NewDatabeatClient(databeatHost, authToken, wlogger, dbeatOptions)
 
 	if err != nil {
 		log.Fatal(err)
@@ -52,7 +54,7 @@ func main() {
 	})
 
 	r.Get("/login", func(w http.ResponseWriter, r *http.Request) {
-		dbeat.TrackUserEvent(r, "user1", &databeat.Event{
+		dbeat.TrackUserEvent(r, "user1", databeat.Event{
 			Event:  "LOGIN",
 			Source: "examples/server-tracking",
 		})

@@ -107,7 +107,7 @@ func NewDatabeatClient(host, authKey string, logger logger.Logger, opts ...Optio
 		return nil, err
 	}
 
-	// TODO: in future switch from goware/logger to just stdlib log/slog
+	// TODO: in future to just stdlib slog
 
 	dbeat := &Databeat{
 		options:     options,
@@ -158,23 +158,29 @@ func (t *Databeat) Options() Options {
 	return t.options
 }
 
-// TrackUserEvent will track the event associated to a particular user. We use the http request
-// `r` for User-Agent and IP information. Note that `r` is optional, and you can pass `nil`
-// as the argument, but it will be unable to offer device and country information.
-func (t *Databeat) TrackUserEvent(r *http.Request, userID string, userEvents ...*Event) {
+func (t *Databeat) TrackEvent(from From, trackEvents ...Event) {
 	if !t.Enabled {
 		return
 	}
 
 	// Copy events
-	events := make([]*Event, len(userEvents))
-	for i, ev := range userEvents {
-		v := *ev // copy
+	events := make([]*Event, len(trackEvents))
+	for i, ev := range trackEvents {
+		v := ev // copy
 		events[i] = &v
 	}
 
 	// Set event based on http request and user info
-	uid, ident := GenUserIDFromRequest(r, userID, t.options.Privacy)
+	var uid string
+	var ident Ident
+	if from.UserHTTPRequest != nil && from.UserID != "" {
+		uid, ident = GenUserIDFromRequest(from.UserHTTPRequest, from.UserID, t.options.Privacy)
+	}
+
+	// Set ident to service if no user details are passed, and project id is passed
+	if uid == "" && from.ProjectID > 0 {
+		ident = IDENT_SERVICE
+	}
 
 	for _, ev := range events {
 		// User & ident
@@ -183,34 +189,44 @@ func (t *Databeat) TrackUserEvent(r *http.Request, userID string, userEvents ...
 			ev.Ident = uint8(ident)
 		}
 
+		// Decorate event if project id is passed
+		if from.ProjectID > 0 {
+			ev.ProjectID = from.ProjectID
+		}
+
 		// Decorate event if user request is passed
-		if r != nil {
+		if from.UserHTTPRequest != nil {
 			// Source
 			if ev.Source == "" {
-				ev.Source = r.URL.Path
+				ev.Source = from.UserHTTPRequest.URL.Path
 			}
 
 			// Device from User-Agent
-			userAgent := r.Header.Get("User-Agent")
+			userAgent := from.UserHTTPRequest.Header.Get("User-Agent")
 			if userAgent != "" {
 				ev.Device = DeviceFromUserAgent(userAgent)
 			}
 
 			// Country
-			countryCode := CountryCodeFromRequest(r)
+			countryCode := CountryCodeFromRequest(from.UserHTTPRequest)
 			if countryCode != "" {
 				ev.CountryCode = &countryCode
 			}
 		}
-
-		if ev.Props == nil {
-			ev.Props = map[string]string{}
-		}
-		ev.Props["_tracker"] = "go-databeat"
 	}
 
 	// Track!
 	t.Track(events...)
+}
+
+// TrackUserEvent will track the event associated to a particular user. We use the http request
+// `r` for User-Agent and IP information. Note that `r` is optional, and you can pass `nil`
+// as the argument, but it will be unable to offer device and country information.
+func (t *Databeat) TrackUserEvent(r *http.Request, userID string, userEvents ...Event) {
+	t.TrackEvent(From{
+		UserHTTPRequest: r,
+		UserID:          userID,
+	}, userEvents...)
 }
 
 // Track is a low-level track function where you control the full payload.
@@ -234,6 +250,14 @@ func (t *Databeat) Track(events ...*Event) {
 			t.log.With("invalidEvents", invalidNames).Warnf("databeat: %d invalid event types", len(invalidNames))
 			// TODO: add alerter here
 		}
+	}
+
+	// Annotate events
+	for _, ev := range events {
+		if ev.Props == nil {
+			ev.Props = map[string]string{}
+		}
+		ev.Props["_tracker"] = "go-databeat"
 	}
 
 	// Add events to the queue
@@ -390,16 +414,13 @@ func (t *Databeat) Reset() {
 func (t *Databeat) run() error {
 	for {
 		select {
-
 		case <-t.ctx.Done():
 			return nil
-
 		case <-time.After(t.options.FlushInterval):
 			err := t.Flush(t.ctx)
 			if err != nil {
 				t.log.With("err", err).Error("databeat: failed to flush")
 			}
-
 		}
 	}
 }

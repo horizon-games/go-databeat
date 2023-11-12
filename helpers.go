@@ -9,6 +9,12 @@ import (
 	"github.com/mileusna/useragent"
 )
 
+type From struct {
+	ProjectID       uint64
+	UserID          string
+	UserHTTPRequest *http.Request
+}
+
 func TimeNow() *time.Time {
 	t := time.Now().UTC()
 	return &t

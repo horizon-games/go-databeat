@@ -15,6 +15,7 @@ const (
 	IDENT_ANON Ident = iota
 	IDENT_PRIVATE
 	IDENT_USER
+	IDENT_SERVICE
 )
 
 func UserID(userID string, privacyOptions PrivacyOptions, r ...*http.Request) (string, Ident) {

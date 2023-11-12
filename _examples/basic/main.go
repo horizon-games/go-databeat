@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/goware/logadapter-zerolog"
 	databeat "github.com/horizon-games/go-databeat"
 	"github.com/rs/zerolog"
 )
@@ -17,9 +18,10 @@ func main() {
 
 	databeatHost := "http://localhost:9999"
 	logger := zerolog.New(os.Stdout)
+	wlogger := logadapter.LogAdapter(logger)
 	authToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJkZW1vIn0.rkbj-101BpUkQPMtmKdp2uANFBsiPmd8JMV3jPwj7X0"
 
-	dbeat, err := databeat.NewDatabeatClient(databeatHost, authToken, logger)
+	dbeat, err := databeat.NewDatabeatClient(databeatHost, authToken, wlogger)
 
 	if err != nil {
 		log.Fatal(err)
@@ -46,9 +48,16 @@ func main() {
 		},
 	)
 
-	dbeat.TrackUserEvent("user1", &databeat.Event{
+	dbeat.TrackUserEvent(nil, "user1", databeat.Event{
 		Event:  "example.test",
 		Source: "api-server/some-endpoint",
+	})
+
+	// TrackEvent is a helper for tracking events with a project ID, which you
+	// can also use to track user events like TrackUserEvent. Just alternative sugar.
+	dbeat.TrackEvent(databeat.From{ProjectID: 42}, databeat.Event{
+		Event:  "server.sync",
+		Source: "api-server/sync",
 	})
 
 	dbeat.Track(&databeat.Event{
