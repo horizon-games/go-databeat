@@ -350,10 +350,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				ok, err := t.Client.Tick(ctx, events)
 				if err != nil {
 					// TODO: add retry logic as right now the events will just get dropped
-					t.log.With("err", err).Errorf("databeat failed to %d flush Tick events -- error", len(events))
+					t.log.With("err", err).Errorf("databeat failed to flush %d Tick events -- error", len(events))
 				}
 				if err == nil && !ok {
-					t.log.Warnf("databeat failed to %d flush Tick events -- not ok", len(events))
+					t.log.Warnf("databeat failed to flush %d Tick events -- not ok", len(events))
 				}
 				if ok {
 					atomic.AddUint32(&flushedBatch, uint32(len(events)))
@@ -384,10 +384,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				ok, err := t.Client.RawEvents(ctx, events)
 				if err != nil {
 					// TODO: add retry logic as right now the events will just get dropped
-					t.log.With("err", err).Errorf("databeat failed to %d flush RawEvents events -- error", len(events))
+					t.log.With("err", err).Errorf("databeat failed to flush %d RawEvents events -- error", len(events))
 				}
 				if err == nil && !ok {
-					t.log.Warnf("databeat failed to %d flush RawEvents events -- not ok", len(events))
+					t.log.Warnf("databeat failed to flush %d RawEvents events -- not ok", len(events))
 				}
 				if ok {
 					atomic.AddUint32(&flushedRaw, uint32(len(events)))
