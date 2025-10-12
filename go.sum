@@ -1,8 +1,6 @@
 github.com/goware/calc v0.2.0 h1:3B9qjXYpE0kgS4LhyklbM6X/0cOvZLdUZG7sdAuVCb4=
 github.com/goware/calc v0.2.0/go.mod h1:BSQUbfS6ICW9RvSV9SikDY+t6/HQKI+CUxIpjE3VD28=
-github.com/goware/logger v0.3.0 h1:pdgnsqj2rSDXtfdu+UuAFuBuOapxeDYNETY39227LMM=
-github.com/goware/logger v0.3.0/go.mod h1:IC34c5H56R1I4/R/d51aQhzHsjSJqkQyIHyuJxOiu0w=
-github.com/mileusna/useragent v1.3.4 h1:MiuRRuvGjEie1+yZHO88UBYg8YBC/ddF6T7F56i3PCk=
-github.com/mileusna/useragent v1.3.4/go.mod h1:3d8TOmwL/5I8pJjyVDteHtgDGcefrFUX4ccGOMKNYYc=
-golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa h1:FRnLl4eNAQl8hwxVVC17teOw8kdjVDVAiFMtgUdTSRQ=
-golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa/go.mod h1:zk2irFbV9DP96SEBUUAy67IdHUaZuSnrz1n472HUCLE=
+github.com/mileusna/useragent v1.3.5 h1:SJM5NzBmh/hO+4LGeATKpaEX9+b4vcGg2qXGLiNGDws=
+github.com/mileusna/useragent v1.3.5/go.mod h1:3d8TOmwL/5I8pJjyVDteHtgDGcefrFUX4ccGOMKNYYc=
+golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b h1:18qgiDvlvH7kk8Ioa8Ov+K6xCi0GMvmGfGW0sgd/SYA=
+golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b/go.mod h1:j/pmGrbnkbPtQfxEe5D0VQhZC6qKbfKifgD0oM7sR70=

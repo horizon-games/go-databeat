@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 
-	"github.com/goware/logadapter-zerolog"
 	databeat "github.com/horizon-games/go-databeat"
-	"github.com/rs/zerolog"
 )
 
 func main() {
@@ -17,12 +16,13 @@ func main() {
 	fmt.Println("===================")
 
 	databeatHost := "http://localhost:9999"
-	logger := zerolog.New(os.Stdout)
-	wlogger := logadapter.LogAdapter(logger)
 	authToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJkZW1vIn0.rkbj-101BpUkQPMtmKdp2uANFBsiPmd8JMV3jPwj7X0"
 
-	dbeat, err := databeat.NewDatabeatClient(databeatHost, authToken, wlogger)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
 
+	dbeat, err := databeat.NewDatabeatClient(databeatHost, authToken, logger)
 	if err != nil {
 		log.Fatal(err)
 	}

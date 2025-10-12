@@ -3,19 +3,19 @@ package databeat
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/goware/calc"
-	"github.com/goware/logger"
 	"github.com/horizon-games/go-databeat/proto"
 )
 
 type Databeat struct {
 	options Options
-	log     logger.Logger
+	log     *slog.Logger
 
 	Client  proto.Databeat
 	Enabled bool
@@ -71,7 +71,7 @@ type (
 	RawEvent = proto.RawEvent
 )
 
-func NewDatabeatClient(host, authKey string, logger logger.Logger, opts ...Options) (*Databeat, error) {
+func NewDatabeatClient(host, authKey string, logger *slog.Logger, opts ...Options) (*Databeat, error) {
 	options := DefaultOptions
 	if len(opts) > 0 {
 		options = opts[0]
@@ -106,8 +106,6 @@ func NewDatabeatClient(host, authKey string, logger logger.Logger, opts ...Optio
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: in future to just stdlib slog
 
 	dbeat := &Databeat{
 		options:     options,
@@ -247,7 +245,7 @@ func (t *Databeat) Track(events ...*Event) {
 		var invalidNames []string
 		valid, invalidNames, events = validateEventTypes(t.assertTypes, events)
 		if !valid {
-			t.log.With("invalidEvents", invalidNames).Warnf("databeat: %d invalid event types", len(invalidNames))
+			t.log.Warn(fmt.Sprintf("databeat: %d invalid event types", len(invalidNames)), slog.Any("invalidEvents", invalidNames))
 			// TODO: add alerter here
 		}
 	}
@@ -350,10 +348,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				ok, err := t.Client.Tick(ctx, events)
 				if err != nil {
 					// TODO: add retry logic as right now the events will just get dropped
-					t.log.With("err", err).Errorf("databeat failed to flush %d Tick events -- error", len(events))
+					t.log.Error(fmt.Sprintf("databeat failed to flush %d Tick events -- error", len(events)), slog.Any("err", err))
 				}
 				if err == nil && !ok {
-					t.log.Warnf("databeat failed to flush %d Tick events -- not ok", len(events))
+					t.log.Warn(fmt.Sprintf("databeat failed to flush %d Tick events -- not ok", len(events)))
 				}
 				if ok {
 					atomic.AddUint32(&flushedBatch, uint32(len(events)))
@@ -384,10 +382,10 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				ok, err := t.Client.RawEvents(ctx, events)
 				if err != nil {
 					// TODO: add retry logic as right now the events will just get dropped
-					t.log.With("err", err).Errorf("databeat failed to flush %d RawEvents events -- error", len(events))
+					t.log.Error(fmt.Sprintf("databeat failed to flush %d RawEvents events -- error", len(events)), slog.Any("err", err))
 				}
 				if err == nil && !ok {
-					t.log.Warnf("databeat failed to flush %d RawEvents events -- not ok", len(events))
+					t.log.Warn(fmt.Sprintf("databeat failed to flush %d RawEvents events -- not ok", len(events)))
 				}
 				if ok {
 					atomic.AddUint32(&flushedRaw, uint32(len(events)))
@@ -398,7 +396,7 @@ func (t *Databeat) Flush(ctx context.Context) error {
 		wg.Wait()
 	}
 
-	t.log.Debugf("databeat flushed %d events", flushedBatch+flushedRaw)
+	t.log.Debug(fmt.Sprintf("databeat flushed %d events", flushedBatch+flushedRaw))
 
 	return nil
 }
