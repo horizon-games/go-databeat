@@ -1,6 +1,6 @@
 module examples
 
-go 1.24.0
+go 1.25.0
 
 replace github.com/horizon-games/go-databeat => ../
 
@@ -9,8 +9,4 @@ require (
 	github.com/horizon-games/go-databeat v0.7.0
 )
 
-require (
-	github.com/goware/calc v0.2.0 // indirect
-	github.com/mileusna/useragent v1.3.5 // indirect
-	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
-)
+require github.com/mileusna/useragent v1.3.5 // indirect

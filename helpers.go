@@ -111,7 +111,7 @@ func validateEventTypes(eventTypes map[string]struct{}, events []*Event) (bool, 
 	}
 
 	// quick validation check
-	var valid bool
+	valid := true
 	for _, ev := range events {
 		if _, ok := eventTypes[ev.Event]; !ok {
 			valid = false
