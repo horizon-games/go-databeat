@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/goware/calc"
 	"github.com/horizon-games/go-databeat/proto"
 )
 
@@ -28,7 +27,7 @@ type Databeat struct {
 	queueRaw    []*proto.RawEvent
 	flushSem    chan struct{}
 
-	stats Stats
+	stats stats
 
 	ctx     context.Context
 	ctxStop context.CancelFunc
@@ -57,9 +56,22 @@ var DefaultOptions = Options{
 	FlushConcurrency:    10,
 	MaxQueueSize:        10_000,
 	SetServerClientProp: false,
-	HTTPClient:          &http.Client{},
+	HTTPClient: &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 20,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	},
 }
 
+type stats struct {
+	NumEvents atomic.Uint64
+	NumFails  atomic.Uint64
+}
+
+// Stats is a snapshot of the client's event counters.
 type Stats struct {
 	NumEvents uint64
 	NumFails  uint64
@@ -69,6 +81,12 @@ type (
 	Event    = proto.Event
 	Device   = proto.Device
 	RawEvent = proto.RawEvent
+)
+
+const (
+	maxRetries     = 3
+	initialBackoff = 1 * time.Second
+	maxBackoff     = 30 * time.Second
 )
 
 func NewDatabeatClient(host, authKey string, logger *slog.Logger, opts ...Options) (*Databeat, error) {
@@ -149,7 +167,10 @@ func (t *Databeat) IsRunning() bool {
 }
 
 func (t *Databeat) Stats() Stats {
-	return t.stats
+	return Stats{
+		NumEvents: t.stats.NumEvents.Load(),
+		NumFails:  t.stats.NumFails.Load(),
+	}
 }
 
 func (t *Databeat) Options() Options {
@@ -183,7 +204,8 @@ func (t *Databeat) TrackEvent(from From, trackEvents ...Event) {
 	for _, ev := range events {
 		// User & ident
 		if ev.UserID == nil || *ev.UserID == "" {
-			ev.UserID = &uid
+			uidCopy := uid
+			ev.UserID = &uidCopy
 			ev.Ident = uint8(ident)
 		}
 
@@ -258,8 +280,27 @@ func (t *Databeat) Track(events ...*Event) {
 		ev.Props["_tracker"] = "go-databeat"
 	}
 
+	// Update stats
+	t.stats.NumEvents.Add(uint64(len(events)))
+
 	// Add events to the queue
 	t.mu.Lock()
+
+	// Check for queue overflow
+	if len(events) >= t.options.MaxQueueSize {
+		dropCount := len(t.queue) + len(events) - t.options.MaxQueueSize
+		t.log.Warn("databeat: queue overflow, dropping events", slog.Int("dropped", dropCount))
+		t.queue = t.queue[:0]
+		events = events[len(events)-t.options.MaxQueueSize:]
+	} else if totalSize := len(t.queue) + len(events); totalSize > t.options.MaxQueueSize {
+		dropCount := totalSize - t.options.MaxQueueSize
+		if dropCount > len(t.queue) {
+			dropCount = len(t.queue)
+		}
+		t.log.Warn("databeat: queue overflow, dropping events", slog.Int("dropped", dropCount))
+		t.queue = t.queue[dropCount:]
+	}
+
 	t.queue = append(t.queue, events...)
 	n := len(t.queue)
 	t.mu.Unlock()
@@ -279,7 +320,26 @@ func (t *Databeat) TrackRaw(events ...*RawEvent) {
 		return
 	}
 
+	// Update stats
+	t.stats.NumEvents.Add(uint64(len(events)))
+
 	t.mu.Lock()
+
+	// Check for queue overflow
+	if len(events) >= t.options.MaxQueueSize {
+		dropCount := len(t.queueRaw) + len(events) - t.options.MaxQueueSize
+		t.log.Warn("databeat: queue overflow, dropping raw events", slog.Int("dropped", dropCount))
+		t.queueRaw = t.queueRaw[:0]
+		events = events[len(events)-t.options.MaxQueueSize:]
+	} else if totalSize := len(t.queueRaw) + len(events); totalSize > t.options.MaxQueueSize {
+		dropCount := totalSize - t.options.MaxQueueSize
+		if dropCount > len(t.queueRaw) {
+			dropCount = len(t.queueRaw)
+		}
+		t.log.Warn("databeat: queue overflow, dropping raw events", slog.Int("dropped", dropCount))
+		t.queueRaw = t.queueRaw[dropCount:]
+	}
+
 	t.queueRaw = append(t.queueRaw, events...)
 	n := len(t.queueRaw)
 	t.mu.Unlock()
@@ -294,11 +354,24 @@ func (t *Databeat) Flush(ctx context.Context) error {
 		return nil
 	}
 
+	flushCtx := ctx
+	if flushCtx == nil {
+		flushCtx = t.authCtx
+	}
+
+	if h, ok := proto.HTTPRequestHeaders(t.authCtx); ok {
+		var err error
+		flushCtx, err = proto.WithHTTPRequestHeaders(flushCtx, h)
+		if err != nil {
+			return err
+		}
+	}
+
 	// copy queue
 	t.mu.Lock()
 
 	var trackBatch []*proto.Event
-	var flushedBatch uint32
+	var flushedBatch atomic.Uint32
 	if len(t.queue) > 0 {
 		trackBatch = make([]*proto.Event, len(t.queue))
 		copy(trackBatch, t.queue)
@@ -307,7 +380,7 @@ func (t *Databeat) Flush(ctx context.Context) error {
 
 	// copy queueRaw
 	var rawBatch []*proto.RawEvent
-	var flushedRaw uint32
+	var flushedRaw atomic.Uint32
 	if len(t.queueRaw) > 0 {
 		rawBatch = make([]*proto.RawEvent, len(t.queueRaw))
 		copy(rawBatch, t.queueRaw)
@@ -331,7 +404,7 @@ func (t *Databeat) Flush(ctx context.Context) error {
 		for i := 0; i < len(trackBatch); i += t.options.FlushBatchSize {
 			wg.Add(1)
 
-			events := trackBatch[i:calc.Min(i+t.options.FlushBatchSize, len(trackBatch))]
+			events := trackBatch[i:min(i+t.options.FlushBatchSize, len(trackBatch))]
 			if t.options.SetServerClientProp {
 				updateEventClientProp(events)
 			}
@@ -342,19 +415,46 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				defer func() { <-t.flushSem }()
 				defer wg.Done()
 
-				ctx, clear := context.WithTimeout(t.authCtx, t.options.FlushTimeout)
-				defer clear()
+				var backoff time.Duration = initialBackoff
+				for attempt := 0; attempt < maxRetries; attempt++ {
+					if flushCtx.Err() != nil {
+						t.requeue(events)
+						return
+					}
 
-				ok, err := t.Client.Tick(ctx, events)
-				if err != nil {
-					// TODO: add retry logic as right now the events will just get dropped
-					t.log.Error(fmt.Sprintf("databeat failed to flush %d Tick events -- error", len(events)), slog.Any("err", err))
-				}
-				if err == nil && !ok {
-					t.log.Warn(fmt.Sprintf("databeat failed to flush %d Tick events -- not ok", len(events)))
-				}
-				if ok {
-					atomic.AddUint32(&flushedBatch, uint32(len(events)))
+					reqCtx, cancel := context.WithTimeout(flushCtx, t.options.FlushTimeout)
+
+					ok, err := t.Client.Tick(reqCtx, events)
+					cancel()
+
+					if err == nil && ok {
+						flushedBatch.Add(uint32(len(events)))
+						return
+					}
+
+					if flushCtx.Err() != nil {
+						t.requeue(events)
+						return
+					}
+
+					if attempt < maxRetries-1 {
+						t.log.Warn("databeat: Tick failed, retrying",
+							slog.Int("attempt", attempt+1),
+							slog.Int("events", len(events)),
+							slog.Any("err", err))
+						if !waitBackoff(flushCtx, backoff) {
+							t.requeue(events)
+							return
+						}
+						backoff = min(backoff*2, maxBackoff)
+					} else {
+						t.log.Error("databeat: Tick failed after retries, re-queueing events",
+							slog.Int("attempt", maxRetries),
+							slog.Int("events", len(events)),
+							slog.Any("err", err))
+						t.stats.NumFails.Add(uint64(len(events)))
+						t.requeue(events)
+					}
 				}
 			}(events)
 		}
@@ -368,7 +468,7 @@ func (t *Databeat) Flush(ctx context.Context) error {
 
 		for i := 0; i < len(rawBatch); i += t.options.FlushBatchSize {
 			wg.Add(1)
-			events := rawBatch[i:calc.Min(i+t.options.FlushBatchSize, len(rawBatch))]
+			events := rawBatch[i:min(i+t.options.FlushBatchSize, len(rawBatch))]
 			updateRawEventDeviceType(events, ServerDevice())
 
 			t.flushSem <- struct{}{}
@@ -376,19 +476,46 @@ func (t *Databeat) Flush(ctx context.Context) error {
 				defer func() { <-t.flushSem }()
 				defer wg.Done()
 
-				ctx, clear := context.WithTimeout(t.authCtx, t.options.FlushTimeout)
-				defer clear()
+				var backoff time.Duration = initialBackoff
+				for attempt := 0; attempt < maxRetries; attempt++ {
+					if flushCtx.Err() != nil {
+						t.requeueRaw(events)
+						return
+					}
 
-				ok, err := t.Client.RawEvents(ctx, events)
-				if err != nil {
-					// TODO: add retry logic as right now the events will just get dropped
-					t.log.Error(fmt.Sprintf("databeat failed to flush %d RawEvents events -- error", len(events)), slog.Any("err", err))
-				}
-				if err == nil && !ok {
-					t.log.Warn(fmt.Sprintf("databeat failed to flush %d RawEvents events -- not ok", len(events)))
-				}
-				if ok {
-					atomic.AddUint32(&flushedRaw, uint32(len(events)))
+					reqCtx, cancel := context.WithTimeout(flushCtx, t.options.FlushTimeout)
+
+					ok, err := t.Client.RawEvents(reqCtx, events)
+					cancel()
+
+					if err == nil && ok {
+						flushedRaw.Add(uint32(len(events)))
+						return
+					}
+
+					if flushCtx.Err() != nil {
+						t.requeueRaw(events)
+						return
+					}
+
+					if attempt < maxRetries-1 {
+						t.log.Warn("databeat: RawEvents failed, retrying",
+							slog.Int("attempt", attempt+1),
+							slog.Int("events", len(events)),
+							slog.Any("err", err))
+						if !waitBackoff(flushCtx, backoff) {
+							t.requeueRaw(events)
+							return
+						}
+						backoff = min(backoff*2, maxBackoff)
+					} else {
+						t.log.Error("databeat: RawEvents failed after retries, re-queueing events",
+							slog.Int("attempt", maxRetries),
+							slog.Int("events", len(events)),
+							slog.Any("err", err))
+						t.stats.NumFails.Add(uint64(len(events)))
+						t.requeueRaw(events)
+					}
 				}
 			}(events)
 		}
@@ -396,7 +523,7 @@ func (t *Databeat) Flush(ctx context.Context) error {
 		wg.Wait()
 	}
 
-	t.log.Debug(fmt.Sprintf("databeat flushed %d events", flushedBatch+flushedRaw))
+	t.log.Debug(fmt.Sprintf("databeat flushed %d events", flushedBatch.Load()+flushedRaw.Load()))
 
 	return nil
 }
@@ -409,12 +536,69 @@ func (t *Databeat) Reset() {
 	t.queueRaw = t.queueRaw[:0]
 }
 
+// requeue adds events back to the queue with overflow protection.
+func (t *Databeat) requeue(events []*proto.Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if len(events) >= t.options.MaxQueueSize {
+		dropCount := len(t.queue) + len(events) - t.options.MaxQueueSize
+		t.log.Warn("databeat: re-queue overflow, dropping events", slog.Int("dropped", dropCount))
+		t.queue = t.queue[:0]
+		events = events[len(events)-t.options.MaxQueueSize:]
+	} else if totalSize := len(t.queue) + len(events); totalSize > t.options.MaxQueueSize {
+		dropCount := totalSize - t.options.MaxQueueSize
+		if dropCount > len(t.queue) {
+			dropCount = len(t.queue)
+		}
+		t.log.Warn("databeat: re-queue overflow, dropping oldest events", slog.Int("dropped", dropCount))
+		t.queue = t.queue[dropCount:]
+	}
+	t.queue = append(t.queue, events...)
+}
+
+// requeueRaw adds raw events back to the queue with overflow protection.
+func (t *Databeat) requeueRaw(events []*proto.RawEvent) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if len(events) >= t.options.MaxQueueSize {
+		dropCount := len(t.queueRaw) + len(events) - t.options.MaxQueueSize
+		t.log.Warn("databeat: re-queue overflow, dropping raw events", slog.Int("dropped", dropCount))
+		t.queueRaw = t.queueRaw[:0]
+		events = events[len(events)-t.options.MaxQueueSize:]
+	} else if totalSize := len(t.queueRaw) + len(events); totalSize > t.options.MaxQueueSize {
+		dropCount := totalSize - t.options.MaxQueueSize
+		if dropCount > len(t.queueRaw) {
+			dropCount = len(t.queueRaw)
+		}
+		t.log.Warn("databeat: re-queue overflow, dropping oldest raw events", slog.Int("dropped", dropCount))
+		t.queueRaw = t.queueRaw[dropCount:]
+	}
+	t.queueRaw = append(t.queueRaw, events...)
+}
+
+func waitBackoff(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 func (t *Databeat) run() error {
+	ticker := time.NewTicker(t.options.FlushInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
-		case <-time.After(t.options.FlushInterval):
+		case <-ticker.C:
 			err := t.Flush(t.ctx)
 			if err != nil {
 				t.log.With("err", err).Error("databeat: failed to flush")
